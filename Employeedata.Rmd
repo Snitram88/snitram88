@@ -1,0 +1,189 @@
+---
+title: "Employee Data"
+author: "Olaiya Martins"
+date: "2024-01-11"
+output: html_document
+---
+
+### Library Installed
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(readxl)
+```
+
+## data loaded
+
+```{r}
+employee_data <- read_excel("~/Documents/employee_data.xlsx")
+menu_employee <- read_excel("~/Documents/menu_employee.xlsx")
+members_employee <- read_excel("~/Documents/members_employee.xlsx")
+```
+
+### View the loaded data
+
+```{r}
+print(employee_data)
+print(menu_employee)
+print(members_employee)
+```
+
+### change the Order date to Visit Date
+
+```{r}
+employee_data2<-employee_data %>%
+  rename(visit_date=order_date)
+head(employee_data2)
+```
+
+## **Analysing the Data**
+
+### 1. how many days has each customer visited the restaurant:
+
+```{r}
+days_visited <- employee_data2 %>% group_by(customer_id) %>% summarise(n_distinct(visit_date))
+head(days_visited)
+```
+
+### 2. what is the total Amount each customer spent at the restaurant?
+
+```{r}
+merged_data <- merge(employee_data2, menu_employee, by = "product_id")
+print(merged_data)
+
+total_amount_spent <- merged_data %>% group_by(customer_id) %>% summarise(total_spent = sum(price)) # Print the result print(total_amount_spent)
+print(total_amount_spent)
+```
+
+### 3. what was the first item from the menu purchased by each customer?
+
+```{r}
+first_purchases <- merged_data %>%
+  arrange(merged_data$visit_date,desc(product_name)) %>%
+  group_by(customer_id) %>%
+  slice(1) %>%
+  select(customer_id, product_name)
+print(first_purchases)
+```
+
+### 4. what is the most purchased item on the menu and how many times was it purchased by all customers
+
+```{r}
+most_purchased_item <- merged_data %>%
+  group_by(product_name) %>%
+  summarise(purchase_count = n()) %>%
+  arrange(desc(purchase_count)) %>%
+  slice(1)
+print(most_purchased_item)
+```
+
+### 5. Which item was the most popular for each customer?
+
+```{r}
+most_popular_item <- merged_data %>%
+  group_by(customer_id, product_name) %>%
+  summarise(purchase_count = n()) %>%
+  top_n(1, purchase_count) %>%
+  arrange(customer_id)
+print(most_popular_item)
+```
+
+### 6. Which item was purchased first by the customer after they became a member?
+
+```{r}
+members_employee$customer_id <- toupper(members_employee$customer_id)
+
+first_purchase_after_membership <- merged_data %>%
+  inner_join(members_employee, by = "customer_id") %>%
+  filter(visit_date > join_date) %>%
+  arrange(customer_id) %>%
+  group_by(customer_id) %>%
+  slice(1)
+print(first_purchase_after_membership)
+```
+
+### 7. Which item was purchased just before the customer became a member?
+
+```{r}
+purchase_before_membership <- merged_data %>%
+  inner_join(members_employee, by = "customer_id") %>%
+  filter(visit_date < join_date) %>%
+  arrange(customer_id, visit_date) %>%
+  group_by(customer_id) %>%
+  slice_tail(n = 1)
+
+print(purchase_before_membership) ###### A has two product name, but only one came, there should be Sushi for A also.(stuck on this)
+```
+
+### 8. what is the total items and amount spent for each member before they became a member?
+
+```{r}
+totals_before_membership<- merged_data %>%
+  inner_join(members_employee, by = "customer_id") %>%
+  filter(visit_date < join_date) %>%
+  group_by(customer_id) %>%
+  summarise(total_items = n(), Total_amount_spent = sum(price))
+print(totals_before_membership)
+```
+
+### 9. if each \$1 spent equates to 10 points and sushi has a 2x points multiplier—how many points would each customer have?
+
+```{r}
+##### define the points multiplier for shushi
+sushi_multiplier<- 2
+
+##### calculate the points for each customer
+points_per_dollar <- 10
+points_per_dollar_sushi <- points_per_dollar * sushi_multiplier
+
+customer_points <- merged_data %>%
+  mutate(points = ifelse(product_name== "sushi", price * points_per_dollar_sushi, price * points_per_dollar)) %>%
+  group_by(customer_id) %>%
+  summarise(total_points = sum(points))
+print(customer_points)
+```
+
+### 10. in the first week after a customer joins the program (including their join date) they earn 2x points on all items, not just sushi-how many points do customer A and B have at the end of January?
+
+```{r}
+### define the points multiplier
+base_multiplier <- 1
+sushi_multiplier
+first_week_multiplier <- 2
+january_multiplier <-2
+
+#### points for each customer at the end of january: to work on better
+customer_points <- merged_data %>%
+  inner_join(members_employee, by = "customer_id") %>%
+  mutate(week_after_join = visit_date - join_date < 7) %>%
+  mutate(points = ifelse(week_after_join, price * first_week_multiplier, price * base_multiplier)) %>%
+  group_by(customer_id) %>%
+  summarise(total_points = sum(points))
+print(customer_points) ###### stuck on this too and unsure of the answer
+```
+
+### 11. Recreate table with column: customer_id, order_date, product_name, price,member(Yes/No)
+
+```{r}
+joined_data <- merge(merged_data, members_employee, by = "customer_id", all.x = TRUE) %>%
+   mutate(membership = ifelse(join_date <= visit_date,"Yes", "No")) %>%
+arrange(customer_id, visit_date, product_name)
+print(joined_data)
+```
+
+### 12. Recreate table with column: customer_id, order_date, product_name, price,member(Y/N), ranking(null/number)
+
+```{r}
+ranking <- merged_data %>%
+  left_join(members_employee, by = "customer_id") %>%
+  mutate(membership = ifelse(visit_date>= join_date, "Yes", "No")) %>%
+  arrange(customer_id, visit_date,product_name) %>%
+  mutate(ranking = ifelse(membership== "Yes", rank(visit_date),NA))
+print(ranking)
+```
+
+### **Insights From the Analyzed Data**:
+
+#### • The most popular menu is ramen. 
+#### • Customers A and B are loyal customers and they become members after ordering sushi. Offer sushi to customer C to become members
